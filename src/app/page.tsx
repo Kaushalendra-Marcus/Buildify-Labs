@@ -149,7 +149,7 @@ export default function Home() {
               {/* Logo + Title */}
               <div className="flex items-center gap-3">
                 <Image
-                  src="/logo1.ico"
+                  src="/logo.ico"
                   alt="Logo"
                   width={40}
                   height={40}
