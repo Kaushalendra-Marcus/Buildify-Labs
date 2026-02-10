@@ -7,7 +7,7 @@ import { Analytics } from "@vercel/analytics/next"
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-    title: 'AI Business Intelligence Workspace',
+    title: 'Buildify Labs - AI Business Intelligence Workspace',
     description:
         'Generative AI-powered business analytics with real-time component generation',
     keywords: ['AI', 'Business Intelligence', 'Analytics', 'Dashboard', 'Tambo AI'],

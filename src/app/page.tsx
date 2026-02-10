@@ -149,16 +149,16 @@ export default function Home() {
               {/* Logo + Title */}
               <div className="flex items-center gap-3">
                 <Image
-                  src="/logo.png"
+                  src="/logo1.ico"
                   alt="Logo"
-                  width={32}
-                  height={32}
+                  width={40}
+                  height={40}
                   priority
-                  className="rounded-md"
+                  className="rounded-full"
                 />
 
                 <h1 className="text-lg font-semibold text-gray-900">
-                  AI Business Intelligence
+                  Buildify Labs - AI Business Intelligence
                 </h1>
               </div>
 
