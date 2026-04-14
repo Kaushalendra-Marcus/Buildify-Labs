@@ -20,24 +20,40 @@ interface ResizableComponentsPanelProps {
   maxHeight?: number
 }
 
+// ── Shared types ───────────────────────────────────────────────────────────────
+interface BodyProps {
+  viewMode: 'all' | 'query' | 'company'
+  components: any[]
+  filteredComponents: any[]
+  queryGroups: any[]
+  activeQueryId: string | null
+  uniqueCompanies: string[]
+  setActiveQuery: (id: string | null) => void
+  toggleQueryGroupCollapsed: (id: string) => void
+  removeQueryGroup: (id: string) => void
+  removeComponent: (id: string) => void
+  getCompanyColor: (company: string) => string
+  ComponentGrid: React.ComponentType<{ items: any[] }>
+}
+
 export default function ResizableComponentsPanel({
   isOpen,
   onToggle,
-  defaultHeight = 400,
+  defaultHeight = 420,
   minHeight = 200,
-  maxHeight = 800
+  maxHeight = 700,
 }: ResizableComponentsPanelProps) {
   const [panelHeight, setPanelHeight] = useState(defaultHeight)
   const [isResizing, setIsResizing] = useState(false)
-  const [viewMode, setViewMode] = useState<'query' | 'company'>('query') // 'query' or 'company'
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [viewMode, setViewMode] = useState<'all' | 'query' | 'company'>('all')
   const panelRef = useRef<HTMLDivElement>(null)
-  
-  // Store hooks
-  const componentsMap = useWorkspaceStore(state => state.components)
-  const componentOrder = useWorkspaceStore(state => state.componentOrder)
-  const removeComponent = useWorkspaceStore(state => state.removeComponent)
-  const clearWorkspace = useWorkspaceStore(state => state.clearWorkspace)
-  
+
+  const componentsMap = useWorkspaceStore((state) => state.components)
+  const componentOrder = useWorkspaceStore((state) => state.componentOrder)
+  const removeComponent = useWorkspaceStore((state) => state.removeComponent)
+  const clearWorkspace = useWorkspaceStore((state) => state.clearWorkspace)
+
   const {
     queryGroups,
     activeQueryId,
@@ -45,59 +61,44 @@ export default function ResizableComponentsPanel({
     removeQueryGroup,
     setActiveQuery,
     clearAllQueries,
-    getGroupByComponentId
   } = useQueryGroupsStore()
 
-  const components = componentOrder
-    .map(id => componentsMap[id])
-    .filter(Boolean)
+  const components = componentOrder.map((id) => componentsMap[id]).filter(Boolean)
 
-  // Get components filtered by active query
-  const getFilteredComponents = () => {
-    if (viewMode === 'query' && activeQueryId) {
-      const activeGroup = queryGroups.find(g => g.id === activeQueryId)
-      if (activeGroup) {
-        return components.filter(comp => 
-          activeGroup.componentIds.includes(comp.id) && !activeGroup.collapsed
-        )
+  const filteredComponents = useMemo(() => {
+    if ((viewMode === 'query' || viewMode === 'company') && activeQueryId) {
+      const activeGroup = queryGroups.find((g) => g.id === activeQueryId)
+      if (activeGroup && (viewMode === 'company' || !activeGroup.collapsed)) {
+        return components.filter((c) => activeGroup.componentIds.includes(c.id))
       }
+      return []
     }
     return components
-  }
+  }, [viewMode, activeQueryId, queryGroups, components])
 
-  const filteredComponents = getFilteredComponents()
-
-  // Extract unique companies from query groups
   const uniqueCompanies = useMemo(() => {
-    const companies = new Set<string>()
-    queryGroups.forEach(group => {
-      companies.add(group.company)
-    })
-    return Array.from(companies)
+    const seen = new Set<string>()
+    queryGroups.forEach((g) => seen.add(g.company))
+    return Array.from(seen)
   }, [queryGroups])
 
-  // Handle resize mouse down
+  // ── Resize ─────────────────────────────────────────────────────────────────
   const handleResizeMouseDown = (e: React.MouseEvent) => {
     e.preventDefault()
     setIsResizing(true)
   }
 
-  // Handle mouse move for resizing
-  const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (!isResizing || !isOpen) return
-    
-    const newHeight = window.innerHeight - e.clientY
-    if (newHeight >= minHeight && newHeight <= maxHeight) {
-      setPanelHeight(newHeight)
-    }
-  }, [isResizing, isOpen, minHeight, maxHeight])
+  const handleMouseMove = useCallback(
+    (e: MouseEvent) => {
+      if (!isResizing || !isOpen || isFullscreen) return
+      const newHeight = window.innerHeight - e.clientY
+      if (newHeight >= minHeight && newHeight <= maxHeight) setPanelHeight(newHeight)
+    },
+    [isResizing, isOpen, isFullscreen, minHeight, maxHeight]
+  )
 
-  // Handle mouse up to stop resizing
-  const handleMouseUp = useCallback(() => {
-    setIsResizing(false)
-  }, [])
+  const handleMouseUp = useCallback(() => setIsResizing(false), [])
 
-  // Add event listeners for resizing
   useEffect(() => {
     if (isResizing) {
       document.addEventListener('mousemove', handleMouseMove)
@@ -108,7 +109,6 @@ export default function ResizableComponentsPanel({
       document.removeEventListener('mouseup', handleMouseUp)
       document.body.style.cursor = ''
     }
-
     return () => {
       document.removeEventListener('mousemove', handleMouseMove)
       document.removeEventListener('mouseup', handleMouseUp)
@@ -116,96 +116,61 @@ export default function ResizableComponentsPanel({
     }
   }, [isResizing, handleMouseMove, handleMouseUp])
 
-  // Helper function to get component size class
-  const getComponentSizeClass = (type: string): string => {
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  const getColSpan = (type: string) => {
     switch (type) {
-      case 'metric':
-        return 'h-48 min-h-[192px] max-h-[250px]';
-      case 'status':
-        return 'min-h-[280px] max-h-[350px]';
       case 'graph':
-        return 'min-h-[320px] max-h-[400px]';
       case 'insight':
-        return 'min-h-[300px] max-h-[380px]';
-      case 'comparison':
-        return 'min-h-[280px] max-h-[350px]';
-      case 'table':
-        return 'min-h-[320px] max-h-[420px]';
-      case 'alert':
-        return 'min-h-[300px] max-h-[400px]';
-      default:
-        return 'min-h-[250px] max-h-[350px]';
-    }
-  }
-
-  // Helper function to get grid column span
-  const getComponentColSpan = (type: string): string => {
-    switch (type) {
-      case 'graph':
-        return 'sm:col-span-2 lg:col-span-2 xl:col-span-2';
+        return 'sm:col-span-2 lg:col-span-2'
       case 'table':
       case 'alert':
       case 'comparison':
-        return 'sm:col-span-2';
       case 'status':
-        return 'sm:col-span-2 lg:col-span-2';
-      case 'insight':
-        return 'sm:col-span-2 lg:col-span-2 xl:col-span-2';
+        return 'sm:col-span-2'
       default:
-        return '';
+        return ''
     }
   }
 
-  // Helper function to get grid row span
-  const getComponentRowSpan = (type: string): string => {
+  const getSizeClass = (type: string) => {
     switch (type) {
-      case 'metric':
-        return 'row-span-1';
-      case 'status':
-      case 'graph':
+      case 'metric':      return 'min-h-[160px] max-h-[220px]'
+      case 'graph':       return 'min-h-[320px] max-h-[420px]'
+      case 'insight':     return 'min-h-[300px] max-h-[400px]'
       case 'comparison':
-      case 'insight':
+      case 'status':      return 'min-h-[280px] max-h-[360px]'
       case 'table':
-      case 'alert':
-        return 'row-span-2';
-      default:
-        return 'row-span-1';
+      case 'alert':       return 'min-h-[300px] max-h-[420px]'
+      default:            return 'min-h-[250px] max-h-[350px]'
     }
   }
 
-  // Render component based on type
+  // FIX: never include `key` in the spread — always pass it directly
   const renderComponent = (component: any) => {
+    const { id, type } = component
+    const p = component.props  // separate variable, no key inside
+
     try {
-      switch (component.type) {
-        case 'metric':
-          return <MetricCard key={component.id} {...component.props} />
-        case 'graph':
-          return <GraphCard key={component.id} {...component.props} />
-        case 'table':
-          return <BusinessSummaryTable key={component.id} {...component.props} />
-        case 'comparison':
-          return <ComparisonCard key={component.id} {...component.props} />
-        case 'insight':
-          return <InsightCard key={component.id} {...component.props} />
-        case 'alert':
-          return <AlertList key={component.id} {...component.props} />
-        case 'status':
-          return <StatusBadge key={component.id} {...component.props} />
-        default:
-          return null
+      switch (type) {
+        case 'metric':      return <MetricCard      key={id} {...p} />
+        case 'graph':       return <GraphCard        key={id} {...p} />
+        case 'table':       return <BusinessSummaryTable key={id} {...p} />
+        case 'comparison':  return <ComparisonCard   key={id} {...p} />
+        case 'insight':     return <InsightCard      key={id} {...p} />
+        case 'alert':       return <AlertList        key={id} {...p} />
+        case 'status':      return <StatusBadge      key={id} {...p} />
+        default:            return null
       }
-    } catch (error) {
-      console.error('Error rendering component:', error)
-      return null
+    } catch (err) {
+      console.error('Error rendering', type, err)
+      return (
+        <div key={id} className="p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+          Error rendering {type}
+        </div>
+      )
     }
   }
 
-  // Get query group for a component
-  const getComponentGroup = (componentId: string) => {
-    return getGroupByComponentId(componentId)
-  }
-
-  // Get color for company badge
   const getCompanyColor = (company: string) => {
     const colors = [
       'bg-blue-100 text-blue-800 border-blue-200',
@@ -214,305 +179,314 @@ export default function ResizableComponentsPanel({
       'bg-purple-100 text-purple-800 border-purple-200',
       'bg-red-100 text-red-800 border-red-200',
       'bg-yellow-100 text-yellow-800 border-yellow-200',
-      'bg-indigo-100 text-indigo-800 border-indigo-200',
-      'bg-pink-100 text-pink-800 border-pink-200',
     ]
-    
-    const hash = company.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
+    const hash = company.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0)
     return colors[hash % colors.length]
   }
 
-  if (!isOpen) return null
+  const ComponentGrid = ({ items }: { items: any[] }) => (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 auto-rows-[minmax(160px,auto)]">
+      {items.map((component) => (
+        <div key={component.id} className={`relative group ${getColSpan(component.type)}`}>
+          <button
+            onClick={() => removeComponent(component.id)}
+            className="absolute -top-2 -right-2 z-20 w-6 h-6 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg hover:bg-red-600 flex items-center justify-center border-2 border-white"
+            title="Remove"
+          >
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+          <div className={`${getSizeClass(component.type)} w-full bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md transition-shadow overflow-hidden`}>
+            {renderComponent(component)}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
 
+  const sharedBodyProps: BodyProps = {
+    viewMode,
+    components,
+    filteredComponents,
+    queryGroups,
+    activeQueryId,
+    uniqueCompanies,
+    setActiveQuery,
+    toggleQueryGroupCollapsed,
+    removeQueryGroup,
+    removeComponent,
+    getCompanyColor,
+    ComponentGrid,
+  }
+
+  // ── Floating button when panel is closed ───────────────────────────────────
+  if (!isOpen) {
+    return components.length > 0 ? (
+      <button
+        onClick={onToggle}
+        className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-full shadow-xl hover:bg-indigo-700 transition-all hover:scale-105 text-sm font-medium"
+      >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+        </svg>
+        Show Components ({components.length})
+      </button>
+    ) : null
+  }
+
+  // ── Fullscreen overlay ─────────────────────────────────────────────────────
+  if (isFullscreen) {
+    return (
+      <div className="fixed inset-0 z-50 bg-white flex flex-col">
+        <div className="flex items-center justify-between px-6 py-3 border-b border-gray-200 bg-white flex-shrink-0 shadow-sm">
+          <div className="flex items-center gap-3">
+            <span className="font-semibold text-gray-900 text-sm">
+              Components ({components.length})
+            </span>
+            <ViewTabs viewMode={viewMode} setViewMode={setViewMode} components={components} queryGroups={queryGroups} uniqueCompanies={uniqueCompanies} />
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsFullscreen(false)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5l5.25 5.25" />
+              </svg>
+              Exit Fullscreen
+            </button>
+            <button
+              onClick={() => { setIsFullscreen(false); onToggle() }}
+              className="p-1.5 hover:bg-gray-100 rounded-lg"
+              title="Close"
+            >
+              <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            <button
+              onClick={() => { if (window.confirm('Clear all?')) { clearWorkspace(); clearAllQueries() } }}
+              className="px-2 py-1 text-xs text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
+            >
+              Clear All
+            </button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-6">
+          <PanelBody {...sharedBodyProps} />
+        </div>
+      </div>
+    )
+  }
+
+  // ── Normal panel ───────────────────────────────────────────────────────────
+  const HEADER_H = 52
   return (
-    <div 
+    <div
       ref={panelRef}
-      className="relative border-t border-gray-300 bg-white shadow-lg"
+      className="relative border-t-2 border-indigo-200 bg-white shadow-2xl flex-shrink-0"
       style={{ height: `${panelHeight}px` }}
     >
       {/* Resize handle */}
       <div
-        className="absolute top-0 left-0 right-0 h-2 bg-transparent hover:bg-blue-300 active:bg-blue-500 cursor-row-resize flex items-center justify-center"
+        className="absolute top-0 left-0 right-0 h-2 cursor-row-resize flex items-center justify-center hover:bg-indigo-100 transition-colors z-10"
         onMouseDown={handleResizeMouseDown}
       >
-        <div className="w-16 h-1 bg-gray-400 rounded-full"></div>
+        <div className="w-12 h-1 bg-indigo-300 rounded-full" />
       </div>
 
-      {/* Panel Header */}
-      <div className="px-6 py-3 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-white flex items-center justify-between">
-        <div className="flex items-center gap-3">
+      {/* Header */}
+      <div
+        className="px-4 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-white flex items-center justify-between"
+        style={{ height: `${HEADER_H}px` }}
+      >
+        <div className="flex items-center gap-2 min-w-0">
           <button
             onClick={onToggle}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-            title="Collapse panel"
+            className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
+            title="Collapse"
           >
-            <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
             </svg>
           </button>
-          
-          <h3 className="text-sm font-semibold text-gray-900">
-            {viewMode === 'query' ? 'Query Groups' : 'Company View'} ({components.length} components)
-          </h3>
-          
-          {/* View Mode Toggle */}
-          <div className="flex items-center gap-2 ml-4">
-            <div className="flex bg-gray-100 rounded-lg p-1">
-              <button
-                onClick={() => setViewMode('query')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                  viewMode === 'query'
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                By Query ({queryGroups.length})
-              </button>
-              <button
-                onClick={() => setViewMode('company')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                  viewMode === 'company'
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                By Company ({uniqueCompanies.length})
-              </button>
-            </div>
-          </div>
+          <span className="text-sm font-semibold text-gray-900 flex-shrink-0">
+            Components ({components.length})
+          </span>
+          <ViewTabs viewMode={viewMode} setViewMode={setViewMode} components={components} queryGroups={queryGroups} uniqueCompanies={uniqueCompanies} />
         </div>
-        
-        <div className="flex items-center gap-3">
-          {/* Fullscreen Toggle */}
+
+        <div className="flex items-center gap-1.5 flex-shrink-0">
           <button
-            onClick={() => setPanelHeight(panelHeight === maxHeight ? defaultHeight : maxHeight)}
-            className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
-            title={panelHeight === maxHeight ? "Normal view" : "Fullscreen"}
+            onClick={() => setIsFullscreen(true)}
+            className="p-1.5 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+            title="Fullscreen — hides chat, only shows components"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              {panelHeight === maxHeight ? (
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 11l3-3m0 0l3 3m-3-3v8m0-13a9 9 0 110 18 9 9 0 010-18z" />
-              ) : (
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5v-4m0 4h-4m4 0l-5-5" />
-              )}
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5v-4m0 4h-4m4 0l-5-5" />
             </svg>
           </button>
-          
           <button
             onClick={() => {
-              if (window.confirm('Clear all components and query groups?')) {
+              if (window.confirm('Clear all components?')) {
                 clearWorkspace()
                 clearAllQueries()
               }
             }}
-            className="px-3 py-1.5 text-sm text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors border border-red-200"
+            className="px-2 py-1 text-xs text-red-600 hover:bg-red-50 border border-red-200 rounded-lg"
           >
-            Clear All
+            Clear
           </button>
         </div>
       </div>
 
-      {/* Query Groups Sidebar (when in query view mode) */}
-      {viewMode === 'query' && queryGroups.length > 0 && (
-        <div className="flex h-[calc(100%-60px)]">
-          {/* Left: Query Groups List */}
-          <div className="w-80 border-r border-gray-200 overflow-y-auto">
-            <div className="p-4">
-              <div className="space-y-3">
-                {queryGroups.map((group) => (
-                  <QueryGroupCard
-                    key={group.id}
-                    group={group}
-                    isActive={activeQueryId === group.id}
-                    onToggle={() => toggleQueryGroupCollapsed(group.id)}
-                    onRemove={() => {
-                      // Remove components associated with this group
-                      group.componentIds.forEach(id => removeComponent(id))
-                      removeQueryGroup(group.id)
-                    }}
-                    onActivate={() => setActiveQuery(group.id)}
-                  />
-                ))}
-              </div>
-              
-              {/* No active query selected message */}
-              {!activeQueryId && (
-                <div className="mt-8 text-center text-gray-500">
-                  <svg className="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  <p className="text-sm">Select a query group to view its components</p>
-                </div>
-              )}
-            </div>
-          </div>
-          
-          {/* Right: Components Grid */}
-          <div className="flex-1 overflow-y-auto p-4">
-            {activeQueryId ? (
-              filteredComponents.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-gray-500">
-                  <svg className="w-16 h-16 mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  <p className="text-lg font-medium">No components in this group</p>
-                  <p className="text-sm mt-1">The query group may be collapsed or empty</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 auto-rows-[minmax(200px,auto)]">
-                  {filteredComponents.map((component) => {
-                    const sizeClass = getComponentSizeClass(component.type)
-                    const rowSpan = getComponentRowSpan(component.type)
-                    const colSpan = getComponentColSpan(component.type)
-                    const group = getComponentGroup(component.id)
-                    
-                    return (
-                      <div 
-                        key={component.id} 
-                        className={`relative group ${rowSpan} ${colSpan}`}
-                      >
-                        {/* Remove Button */}
-                        <button
-                          onClick={() => removeComponent(component.id)}
-                          className="absolute -top-2 -right-2 z-20 w-6 h-6 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg hover:bg-red-600 flex items-center justify-center border-2 border-white"
-                          title="Remove component"
-                        >
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                          </svg>
-                        </button>
-                        
-                        {/* Component Container */}
-                        <div className={`${sizeClass} w-full bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md transition-shadow overflow-hidden`}>
-                          {renderComponent(component)}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )
-            ) : (
-              <div className="flex flex-col items-center justify-center h-full text-gray-500">
-                <div className="text-center">
-                  <svg className="w-20 h-20 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                  </svg>
-                  <h3 className="text-lg font-medium text-gray-700 mb-2">Select a Query Group</h3>
-                  <p className="text-sm text-gray-500">Click on any query group in the sidebar to view its components</p>
-                  <div className="mt-4 text-xs text-gray-400">
-                    <p>• Each group contains components from one user query</p>
-                    <p>• Click the collapse button (↓) to hide components</p>
-                    <p>• Hover over a group to see delete option</p>
-                  </div>
-                </div>
-              </div>
-            )}
+      {/* Body */}
+      <div className="overflow-y-auto" style={{ height: `${panelHeight - HEADER_H}px` }}>
+        <PanelBody {...sharedBodyProps} />
+      </div>
+    </div>
+  )
+}
+
+// ── Shared view tabs ───────────────────────────────────────────────────────────
+function ViewTabs({
+  viewMode, setViewMode, components, queryGroups, uniqueCompanies
+}: {
+  viewMode: 'all' | 'query' | 'company'
+  setViewMode: (m: 'all' | 'query' | 'company') => void
+  components: any[]
+  queryGroups: any[]
+  uniqueCompanies: string[]
+}) {
+  return (
+    <div className="flex bg-gray-100 rounded-lg p-0.5 ml-1">
+      {(['all', 'query', 'company'] as const).map((mode) => (
+        <button
+          key={mode}
+          onClick={() => setViewMode(mode)}
+          className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+            viewMode === mode ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-800'
+          }`}
+        >
+          {mode === 'all'     && `All (${components.length})`}
+          {mode === 'query'   && `Queries (${queryGroups.length})`}
+          {mode === 'company' && `Companies (${uniqueCompanies.length})`}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+// ── Panel body ─────────────────────────────────────────────────────────────────
+function PanelBody({
+  viewMode, components, filteredComponents, queryGroups, activeQueryId,
+  uniqueCompanies, setActiveQuery, toggleQueryGroupCollapsed, removeQueryGroup,
+  removeComponent, getCompanyColor, ComponentGrid,
+}: BodyProps) {
+
+  if (viewMode === 'all') {
+    return (
+      <div className="p-4">
+        {components.length === 0 ? <EmptyState /> : <ComponentGrid items={components} />}
+      </div>
+    )
+  }
+
+  if (viewMode === 'query') {
+    if (queryGroups.length === 0) {
+      return (
+        <div className="p-4">
+          <p className="text-sm text-gray-400 text-center mt-6 mb-4">No query groups yet.</p>
+          {components.length > 0 && <ComponentGrid items={components} />}
+        </div>
+      )
+    }
+    return (
+      <div className="flex h-full">
+        <div className="w-72 border-r border-gray-200 overflow-y-auto flex-shrink-0">
+          <div className="p-3 space-y-2">
+            {queryGroups.map((group) => (
+              <QueryGroupCard
+                key={group.id}
+                group={group}
+                isActive={activeQueryId === group.id}
+                onToggle={() => toggleQueryGroupCollapsed(group.id)}
+                onRemove={() => {
+                  group.componentIds.forEach((id: string) => removeComponent(id))
+                  removeQueryGroup(group.id)
+                }}
+                onActivate={() => setActiveQuery(group.id)}
+              />
+            ))}
           </div>
         </div>
-      )}
-
-      {/* Company View Mode */}
-      {viewMode === 'company' && (
-        <div className="h-[calc(100%-60px)] overflow-y-auto p-4">
-          {uniqueCompanies.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-gray-500">
-              <svg className="w-16 h-16 mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              <p className="text-lg font-medium">No components found</p>
-              <p className="text-sm mt-1">Generate some components by asking about companies</p>
-            </div>
+        <div className="flex-1 overflow-y-auto p-4">
+          {!activeQueryId ? (
+            <p className="text-sm text-gray-400 text-center mt-16">Select a query to view components</p>
+          ) : filteredComponents.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center mt-16">No components in this group (collapsed?)</p>
           ) : (
-            <>
-              {/* Company Filter Tabs */}
-              <div className="mb-6">
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    onClick={() => setActiveQuery(null)}
-                    className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors ${
-                      !activeQueryId
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    All Companies ({components.length})
-                  </button>
-                  
-                  {uniqueCompanies.map(company => {
-                    const companyComponents = components.filter(comp => 
-                      getComponentGroup(comp.id)?.company === company
-                    )
-                    return (
-                      <button
-                        key={company}
-                        onClick={() => {
-                          const group = queryGroups.find(g => g.company === company)
-                          if (group) setActiveQuery(group.id)
-                        }}
-                        className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors ${
-                          activeQueryId === (queryGroups.find(g => g.company === company)?.id || null)
-                            ? `${getCompanyColor(company).split(' ')[0]} ${getCompanyColor(company).split(' ')[2]}`
-                            : `bg-gray-100 text-gray-700 hover:bg-gray-200`
-                        }`}
-                      >
-                        {company} ({companyComponents.length})
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-              
-              {/* Components Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 auto-rows-[minmax(200px,auto)]">
-                {filteredComponents.map((component) => {
-                  const sizeClass = getComponentSizeClass(component.type)
-                  const rowSpan = getComponentRowSpan(component.type)
-                  const colSpan = getComponentColSpan(component.type)
-                  const group = getComponentGroup(component.id)
-                  
-                  return (
-                    <div 
-                      key={component.id} 
-                      className={`relative group ${rowSpan} ${colSpan}`}
-                    >
-                      {/* Company Badge */}
-                      {group && (
-                        <div className={`absolute -top-2 left-3 z-10 px-2 py-0.5 text-xs font-medium rounded-full border ${getCompanyColor(group.company)}`}>
-                          {group.company}
-                        </div>
-                      )}
-                      
-                      {/* Query Preview Tooltip */}
-                      {group && (
-                        <div className="absolute opacity-0 group-hover:opacity-100 transition-opacity -top-8 left-0 z-30 bg-gray-900 text-white text-xs rounded px-2 py-1 whitespace-nowrap pointer-events-none">
-                          {group.userQuery}
-                          <div className="absolute bottom-0 left-3 transform translate-y-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-gray-900"></div>
-                        </div>
-                      )}
-                      
-                      {/* Remove Button */}
-                      <button
-                        onClick={() => removeComponent(component.id)}
-                        className="absolute -top-2 -right-2 z-20 w-6 h-6 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg hover:bg-red-600 flex items-center justify-center border-2 border-white"
-                        title="Remove component"
-                      >
-                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                      
-                      {/* Component Container */}
-                      <div className={`${sizeClass} w-full bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md transition-shadow overflow-hidden`}>
-                        {renderComponent(component)}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </>
+            <ComponentGrid items={filteredComponents} />
           )}
         </div>
-      )}
+      </div>
+    )
+  }
+
+  if (viewMode === 'company') {
+    return (
+      <div className="p-4">
+        {uniqueCompanies.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-4">
+            <button
+              onClick={() => setActiveQuery(null)}
+              className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
+                !activeQueryId ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              All ({components.length})
+            </button>
+            {uniqueCompanies.map((company) => {
+              const group = queryGroups.find((g: any) => g.company === company)
+              const count = group
+                ? components.filter((c: any) => group.componentIds.includes(c.id)).length
+                : 0
+              return (
+                <button
+                  key={company}
+                  onClick={() => group && setActiveQuery(group.id)}
+                  className={`px-3 py-1 text-xs font-medium rounded-full border transition-colors ${
+                    activeQueryId === group?.id
+                      ? getCompanyColor(company)
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border-transparent'
+                  }`}
+                >
+                  {company} ({count})
+                </button>
+              )
+            })}
+          </div>
+        )}
+        <ComponentGrid items={filteredComponents.length ? filteredComponents : components} />
+      </div>
+    )
+  }
+
+  return null
+}
+
+function EmptyState() {
+  return (
+    <div className="flex flex-col items-center justify-center py-16 text-gray-400">
+      <svg className="w-12 h-12 mb-3 text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1}
+          d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7" />
+      </svg>
+      <p className="text-sm font-medium">No components yet</p>
+      <p className="text-xs mt-1">Ask a question to generate analytics</p>
     </div>
   )
 }

@@ -1,13 +1,13 @@
 'use client'
 
 import { useState } from 'react'
-import MetricCard from '@/components/tambo/MetricCard'
-import GraphCard from '@/components/tambo/GraphCard'
-import AlertList from '@/components/tambo/AlertList'
-import ComparisonCard from '@/components/tambo/ComparisonCard'
-import BusinessSummaryTable from '@/components/tambo/BusinessSummaryTable'
-import InsightCard from '@/components/tambo/InsightCard'
-import StatusBadge from '@/components/tambo/StatusBadge'
+import MetricCard from '../components/tambo/MetricCard' 
+import GraphCard from '../components/tambo/GraphCard'
+import AlertList from '../components/tambo/AlertList'
+import ComparisonCard from '../components/tambo/ComparisonCard'
+import BusinessSummaryTable from '../components/tambo/BusinessSummaryTable'
+import InsightCard from '../components/tambo/InsightCard'
+import StatusBadge from '../components/tambo/StatusBadge'
 
 export default function ComponentTestPage() {
   const [activeTab, setActiveTab] = useState<string>('all')
@@ -23,6 +23,7 @@ export default function ComponentTestPage() {
           change="+12%"
           description="Total revenue for current month"
           color="blue"
+          precision={2}
         />
       ),
       json: `{"type":"tool","name":"show_component_MetricCard","args":{"title":"Monthly Revenue","value":"$245,000","trend":"up","change":"+12%"}}`
@@ -43,6 +44,10 @@ export default function ComponentTestPage() {
           ]}
           yAxisLabel="Revenue ($K)"
           xAxisLabel="Month"
+          showGrid={true}
+          showLegend={true}
+          colorScheme="blue"
+          height={400}
         />
       ),
       json: `{"type":"tool","name":"show_component_GraphCard","args":{"title":"Revenue Trend","type":"line","data":[{"label":"Jan","value":200},{"label":"Feb","value":220},{"label":"Mar","value":245}]}}`
@@ -58,6 +63,7 @@ export default function ComponentTestPage() {
               description: 'Gross margin decreased from 48% to 45%',
               level: 'warning',
               timestamp: '2 hours ago',
+              status: 'new',
               action: 'Review pricing strategy'
             },
             {
@@ -65,9 +71,13 @@ export default function ComponentTestPage() {
               description: 'Customer acquisition cost rose by 15%',
               level: 'critical',
               timestamp: '5 hours ago',
+              status: 'new',
               action: 'Optimize marketing channels'
             }
           ]}
+          autoRefresh={false}
+          refreshInterval={60000}
+          maxAlerts={10}
         />
       ),
       json: `{"type":"tool","name":"show_component_AlertList","args":{"title":"Business Alerts","alerts":[{"title":"Margin Decline","description":"Gross margin down 3%","level":"warning"}]}}`
@@ -100,6 +110,9 @@ export default function ComponentTestPage() {
             { item: 'Customer Churn', value: '4.2%', status: 'warning', trend: 'up', change: '+0.8%' },
             { item: 'Active Users', value: '28,540', status: 'success', trend: 'up', change: '+15%' }
           ]}
+          sortable={true}
+          pagination={true}
+          pageSize={10}
         />
       ),
       json: `{"type":"tool","name":"show_component_BusinessSummaryTable","args":{"title":"Dashboard","rows":[{"item":"Revenue","value":"$245K","status":"success"}]}}`

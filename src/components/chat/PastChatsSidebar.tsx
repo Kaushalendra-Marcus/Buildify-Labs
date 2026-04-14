@@ -1,17 +1,8 @@
 'use client'
 
-import { useState } from 'react'
-import { useTamboThread } from '@tambo-ai/react'
-
-interface ChatMessage {
-  id: string
-  title: string
-  preview: string
-  timestamp: string
-  unread: boolean
-  messageId: string
-  role: 'user' | 'assistant' | 'system' | 'tool'
-}
+import { useState, useMemo } from 'react'
+import { useChatHistoryStore } from '@/lib/store/chat-history-store'
+import { useAuthStore } from '@/lib/store/auth-store'
 
 interface PastChatsSidebarProps {
   onClose?: () => void
@@ -19,256 +10,171 @@ interface PastChatsSidebarProps {
 
 export default function PastChatsSidebar({ onClose }: PastChatsSidebarProps) {
   const [searchQuery, setSearchQuery] = useState('')
-  const { thread } = useTamboThread()
 
-  // Convert thread messages to chat list format
-  const chatMessages: ChatMessage[] = thread?.messages?.map((message, index) => {
-    // Extract text content from message
-    const getMessageContent = (content: any): string => {
-      if (typeof content === 'string') return content
-      if (Array.isArray(content)) {
-        return content
-          .filter(item => item?.type === 'text')
-          .map(item => item.text)
-          .join('\n')
-      }
-      if (content?.type === 'text') return content.text
-      return ''
-    }
+  const user = useAuthStore((state) => state.user)
+  const allSessions = useChatHistoryStore((state) => state.sessions)
+  const currentSessionId = useChatHistoryStore((state) => state.currentSessionId)
+  const setCurrentSession = useChatHistoryStore((state) => state.setCurrentSession)
 
-    const content = getMessageContent(message.content)
-    const messageDate = new Date(message.createdAt)
+  // Get current session messages
+  const currentSession = currentSessionId ? allSessions[currentSessionId] : null
+  const messages = currentSession?.messages ?? []
+
+  // Format relative time
+  const formatTime = (timestamp: string) => {
+    const date = new Date(timestamp)
     const now = new Date()
-    const diffMinutes = Math.floor((now.getTime() - messageDate.getTime()) / (1000 * 60))
+    const diffMs = now.getTime() - date.getTime()
+    const diffMins = Math.floor(diffMs / 60000)
+    if (diffMins < 1) return 'just now'
+    if (diffMins < 60) return `${diffMins}m ago`
+    if (diffMins < 1440) return `${Math.floor(diffMins / 60)}h ago`
+    return `${Math.floor(diffMins / 1440)}d ago`
+  }
 
-    // Format timestamp
-    let timestamp: string
-    if (diffMinutes < 1) {
-      timestamp = 'just now'
-    } else if (diffMinutes < 60) {
-      timestamp = `${diffMinutes}m ago`
-    } else if (diffMinutes < 1440) {
-      const hours = Math.floor(diffMinutes / 60)
-      timestamp = `${hours}h ago`
-    } else {
-      const days = Math.floor(diffMinutes / 1440)
-      timestamp = `${days}d ago`
-    }
-
-    // Create title from first few words
-    const words = content.split(' ').slice(0, 4).join(' ')
-    const title = words.length > 0 ? `${words}...` : 'Message'
-
-    // Preview (truncated content)
-    const preview = content.length > 60
-      ? content.substring(0, 60) + '...'
-      : content || 'No content'
-
-    return {
-      id: message.id,
-      title: `${message.role === 'user' ? 'You: ' : 'AI: '}${title}`,
-      preview,
-      timestamp,
-      unread: index === thread.messages.length - 1, // Mark last message as "unread"
-      messageId: message.id,
-      role: message.role
-    }
-  }) || []
-
-  // Filter messages based on search
-  const filteredMessages = chatMessages.filter(msg =>
-    msg.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    msg.preview.toLowerCase().includes(searchQuery.toLowerCase())
-  )
-
-  // Scroll to message in chat
-  const handleChatClick = (messageId: string) => {
-    const messageElement = document.getElementById(`message-${messageId}`)
-    if (messageElement) {
-      messageElement.scrollIntoView({
-        behavior: 'smooth',
-        block: 'center',
-        inline: 'nearest'
-      })
-
-      // Frosty blue glass effect
-      messageElement.classList.add(
-        'bg-gradient-to-br',
-        'from-blue-50/95',       // Cool blue-white
-        'via-sky-50/90',         // Sky blue tint
-        'to-white/95',           // Back to white
-        'border',
-        'border-sky-200/50',     // Sky blue border
-        'shadow-[0_0_0_1px_rgba(186,230,253,0.3)]', // Inner light blue border
-        'shadow-[0_4px_20px_-2px_rgba(56,189,248,0.15)]', // Blue shadow
-        'shadow-[0_8px_32px_0_rgba(14,165,233,0.08)]', // Deeper blue shadow
-        'rounded-2xl',
-        'backdrop-blur-[2px]'
+  // Build display list from current session messages
+  const displayMessages = useMemo(() => {
+    return messages
+      .map((msg) => ({
+        id: msg.id,
+        role: msg.role,
+        preview: msg.content.length > 70 ? msg.content.slice(0, 70) + '…' : msg.content,
+        time: formatTime(msg.timestamp),
+      }))
+      .filter((m) =>
+        !searchQuery ||
+        m.preview.toLowerCase().includes(searchQuery.toLowerCase())
       )
+  }, [messages, searchQuery])
 
-      // Create a shimmering effect
-      const shimmer = document.createElement('div')
-      shimmer.className = 'absolute inset-0 rounded-2xl pointer-events-none'
-      shimmer.style.background = 'linear-gradient(90deg, transparent 30%, rgba(255,255,255,0.4) 50%, transparent 70%)'
-      shimmer.style.opacity = '0'
-      shimmer.style.zIndex = '1'
-
-      messageElement.style.position = 'relative'
-      messageElement.appendChild(shimmer)
-
-      // Animate the shimmer
-      shimmer.animate(
-        [
-          { transform: 'translateX(-100%)', opacity: '0' },
-          { transform: 'translateX(100%)', opacity: '0.7' },
-          { transform: 'translateX(200%)', opacity: '0' }
-        ],
-        {
-          duration: 1500,
-          easing: 'ease-in-out'
-        }
-      )
-
-      // Gentle floating animation
-      messageElement.animate(
-        [
-          { transform: 'translateY(0px)' },
-          { transform: 'translateY(-3px)' },
-          { transform: 'translateY(0px)' }
-        ],
-        {
-          duration: 1200,
-          easing: 'cubic-bezier(0.34, 1.56, 0.64, 1)'
-        }
-      )
-
-      setTimeout(() => {
-        // Remove shimmer element
-        if (shimmer.parentNode) {
-          shimmer.parentNode.removeChild(shimmer)
-        }
-
-        // Remove all added classes
-        messageElement.classList.remove(
-          'bg-gradient-to-br',
-          'from-blue-50/95',
-          'via-sky-50/90',
-          'to-white/95',
-          'border',
-          'border-sky-200/50',
-          'shadow-[0_0_0_1px_rgba(186,230,253,0.3)]',
-          'shadow-[0_4px_20px_-2px_rgba(56,189,248,0.15)]',
-          'shadow-[0_8px_32px_0_rgba(14,165,233,0.08)]',
-          'rounded-2xl',
-          'backdrop-blur-[2px]'
-        )
-
-        // Reset position style
-        messageElement.style.position = ''
-      }, 2200)
+  // Scroll to a message in the chat area
+  const scrollToMessage = (id: string) => {
+    const el = document.getElementById(`msg-${id}`)
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      el.classList.add('ring-2', 'ring-indigo-400', 'ring-offset-1')
+      setTimeout(() => el.classList.remove('ring-2', 'ring-indigo-400', 'ring-offset-1'), 2000)
     }
   }
+
+  // Past sessions for switching
+  const pastSessions = useMemo(() => {
+    if (!user?.id) return []
+    return Object.values(allSessions)
+      .filter((s) => s.userId === user.id)
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+      .slice(0, 10)
+  }, [allSessions, user?.id])
+
   return (
     <div className="w-full h-full bg-white flex flex-col">
-      {/* Sidebar Header */}
-      <div className="p-4 border-b border-gray-100">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
+      {/* Header */}
+      <div className="p-4 border-b border-gray-100 flex-shrink-0">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
             {onClose && (
               <button
                 onClick={onClose}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
                 title="Hide sidebar"
               >
-                <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             )}
             <span className="text-sm font-semibold text-gray-900">Current Chat</span>
           </div>
-          <div className="text-xs text-gray-500">
-            {chatMessages.length} messages
-          </div>
+          <span className="text-xs text-gray-400">{messages.length} messages</span>
         </div>
 
         {/* Search */}
         <div className="relative">
           <input
             type="text"
-            placeholder="Search in chat..."
+            placeholder="Search messages…"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full px-3 py-2.5 text-sm bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full px-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent"
           />
-          <svg className="absolute right-3 top-2.5 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="absolute right-3 top-2.5 w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
         </div>
       </div>
 
-      {/* Chat List */}
-      <div className="flex-1 overflow-y-auto scrollbar-thin">
-        <div className="p-2">
-          {filteredMessages.length === 0 ? (
-            <div className="text-center py-8">
-              <svg className="w-12 h-12 mx-auto text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-              </svg>
-              <p className="text-sm text-gray-500">No messages yet</p>
-              <p className="text-xs text-gray-400 mt-1">Start chatting to see messages here</p>
-            </div>
-          ) : (
-            <div className="space-y-1">
-              {filteredMessages.map((msg) => (
-                <div
-                  key={msg.id}
-                  onClick={() => handleChatClick(msg.messageId)}
-                  className={`p-3 rounded-lg cursor-pointer transition-all hover:bg-gray-50 ${msg.unread ? 'bg-blue-50 border border-blue-100' : ''
-                    } ${msg.role === 'user' ? 'border-l-2 border-blue-500' : 'border-l-2 border-green-500'}`}
-                >
-                  <div className="flex items-start justify-between mb-1">
-                    <div className="flex items-center">
-                      <div className={`w-2 h-2 rounded-full mr-2 ${msg.role === 'user' ? 'bg-blue-500' : 'bg-green-500'}`}></div>
-                      <h3 className="text-sm font-medium text-gray-900 truncate flex-1">{msg.title}</h3>
-                    </div>
-                    {msg.unread && (
-                      <span className="flex-shrink-0 w-2 h-2 bg-blue-500 rounded-full ml-1.5 mt-1"></span>
-                    )}
-                  </div>
-                  <p className="text-xs text-gray-500 mb-2">{msg.preview}</p>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-400">{msg.timestamp}</span>
-                    <span className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1">
-                      View
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
-                    </span>
-                  </div>
+      {/* Current session messages */}
+      <div className="flex-1 overflow-y-auto min-h-0">
+        {displayMessages.length === 0 ? (
+          <div className="text-center py-10 px-4">
+            <svg className="w-10 h-10 mx-auto text-gray-200 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1}
+                d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+            <p className="text-sm text-gray-400">No messages yet</p>
+            <p className="text-xs text-gray-300 mt-1">Start chatting to see them here</p>
+          </div>
+        ) : (
+          <div className="p-2 space-y-1">
+            {displayMessages.map((msg) => (
+              <button
+                key={msg.id}
+                onClick={() => scrollToMessage(msg.id)}
+                className={`w-full text-left p-3 rounded-lg transition-all hover:bg-gray-50 border-l-2 ${
+                  msg.role === 'user' ? 'border-indigo-400' : 'border-green-400'
+                }`}
+              >
+                <div className="flex items-center gap-1.5 mb-1">
+                  <div className={`w-1.5 h-1.5 rounded-full ${msg.role === 'user' ? 'bg-indigo-400' : 'bg-green-400'}`} />
+                  <span className="text-xs font-medium text-gray-600">
+                    {msg.role === 'user' ? 'You' : 'AI'}
+                  </span>
+                  <span className="text-xs text-gray-300 ml-auto">{msg.time}</span>
                 </div>
+                <p className="text-xs text-gray-600 leading-relaxed line-clamp-2">{msg.preview}</p>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Past sessions */}
+        {pastSessions.length > 1 && (
+          <div className="px-3 pb-4">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 mt-4">Past Sessions</p>
+            <div className="space-y-1">
+              {pastSessions.map((session) => (
+                <button
+                  key={session.id}
+                  onClick={() => setCurrentSession(session.id)}
+                  className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-colors ${
+                    session.id === currentSessionId
+                      ? 'bg-indigo-50 text-indigo-700 font-medium'
+                      : 'text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  <div className="font-medium truncate">{session.title}</div>
+                  <div className="text-gray-400 mt-0.5">
+                    {session.messages.length} messages · {formatTime(session.updatedAt)}
+                  </div>
+                </button>
               ))}
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
-      {/* Sidebar Footer */}
-      <div className="p-4 border-t border-gray-200">
-        <div className="flex items-center justify-between text-xs text-gray-500">
-          <div className="flex items-center gap-2">
-            <div className="flex items-center">
-              <div className="w-2 h-2 bg-blue-500 rounded-full mr-1.5"></div>
-              <span>User</span>
-            </div>
-            <div className="flex items-center">
-              <div className="w-2 h-2 bg-green-500 rounded-full mr-1.5"></div>
-              <span>AI</span>
-            </div>
+      {/* Footer */}
+      <div className="p-3 border-t border-gray-100 flex-shrink-0">
+        <div className="flex items-center justify-between text-xs text-gray-400">
+          <div className="flex items-center gap-3">
+            <span className="flex items-center gap-1">
+              <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full" /> You
+            </span>
+            <span className="flex items-center gap-1">
+              <div className="w-1.5 h-1.5 bg-green-400 rounded-full" /> AI
+            </span>
           </div>
-          <div className="text-xs text-gray-500">
-            {filteredMessages.length} of {chatMessages.length} shown
-          </div>
+          <span>{displayMessages.length} of {messages.length} shown</span>
         </div>
       </div>
     </div>

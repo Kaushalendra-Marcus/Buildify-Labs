@@ -1,0 +1,104 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  avatar       String?
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  sessions     Session[]
+  chatSessions ChatSession[]
+  components   WorkspaceComponent[]
+
+  @@index([email])
+}
+
+model Session {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model ChatSession {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title       String
+  description String?
+  pinned      Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  messages   ChatMessage[]
+  components WorkspaceComponent[]
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model ChatMessage {
+  id        String      @id @default(cuid())
+  sessionId String
+  session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  role    String  // "user" | "assistant"
+  content String  @db.Text
+
+  createdAt DateTime @default(now())
+
+  @@index([sessionId])
+}
+
+model WorkspaceComponent {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  sessionId String?
+  session   ChatSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+
+  type        String  // "metric" | "graph" | "table" | "comparison" | "insight" | "alert" | "status"
+  title       String?
+  description String?
+  props       Json
+
+  aiGenerated Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@index([sessionId])
+  @@index([type])
+}
+
+model UploadedFile {
+  id     String @id @default(cuid())
+  userId String
+
+  name       String
+  type       String  // "csv" | "pdf" | "image" | "excel"
+  size       Int
+  url        String?
+  processed  Boolean  @default(false)
+  uploadedAt DateTime @default(now())
+
+  @@index([userId])
+}

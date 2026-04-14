@@ -1,11 +1,15 @@
 "use client"
 
 import { Suspense, useEffect, useState, useRef, useCallback } from "react"
+import { useRouter } from "next/navigation"
+import Link from "next/link"
 import Image from "next/image"
 
 import ChatInterface from "@/components/chat/ChatInterface"
+import GeminiChatInterface from "@/components/chat/GeminiChatInterface"
 import PastChatsSidebar from "@/components/chat/PastChatsSidebar"
 import { useWorkspaceStore } from "@/lib/store/workspace-store"
+import { useAuthStore } from "@/lib/store/auth-store"
 import { ErrorBoundary } from "@/components/ErrorBoundary"
 
 // Define ChatLoadingSkeleton separately
@@ -28,6 +32,9 @@ function ChatLoadingSkeleton() {
 }
 
 export default function Home() {
+  const router = useRouter()
+  const user = useAuthStore((state) => state.user)
+  const logout = useAuthStore((state) => state.logout)
   const [mounted, setMounted] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [sidebarWidth, setSidebarWidth] = useState(320) // Initial width in pixels
@@ -39,7 +46,10 @@ export default function Home() {
 
   useEffect(() => {
     setMounted(true)
-  }, [])
+    if (!user) {
+      router.push('/signin')
+    }
+  }, [user, router])
 
   // Handle mouse down on resizer
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -171,6 +181,12 @@ export default function Home() {
             </div>
 
             <div className="flex items-center gap-3">
+              <Link
+                href="/dashboard"
+                className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                Dashboard
+              </Link>
               <button 
                 className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
                 onClick={() => {
@@ -181,6 +197,15 @@ export default function Home() {
               >
                 New Chat
               </button>
+              <button
+                onClick={() => {
+                  logout()
+                  router.push('/signin')
+                }}
+                className="px-4 py-2 text-sm font-medium text-red-700 hover:text-red-900 hover:bg-red-50 rounded-lg transition-colors"
+              >
+                Logout
+              </button>
             </div>
           </div>
         </div>
@@ -189,7 +214,7 @@ export default function Home() {
         <div className="flex-1 min-h-0">
           <ErrorBoundary>
             <Suspense fallback={<ChatLoadingSkeleton />}>
-              <ChatInterface />
+              <GeminiChatInterface />
             </Suspense>
           </ErrorBoundary>
         </div>
